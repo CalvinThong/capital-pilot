@@ -24,19 +24,36 @@ Realized PnL percentage and linked position decisions require vaults deployed fr
 ```powershell
 npm run lint
 npm run build
-```# React + Vite
+```
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Deploy to Firebase Hosting
 
-Currently, two official plugins are available:
+Hosting config is in `firebase.json`; it serves `dist` as a single-page app.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Create a project in the Firebase console, then log in:
 
-## React Compiler
+   ```powershell
+   npx firebase-tools login
+   ```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+2. Point `src/config/contracts.js` at Sepolia. The hosted site cannot reach `127.0.0.1:8545`.
 
-## Expanding the ESLint configuration
+   ```js
+   chainId: 11155111,
+   chainIdHex: '0xaa36a7',
+   chainName: 'Sepolia',
+   rpcUrl: '<SEPOLIA_RPC_URL>',
+   factoryAddress: '<FACTORY_ADDRESS>',
+   regimeRegistryAddress: '<REGIME_REGISTRY_ADDRESS>',
+   ```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+3. Build and deploy, passing your project ID:
+
+   ```powershell
+   npm run build
+   npx firebase-tools deploy --only hosting --project <project-id>
+   ```
+
+   To avoid passing `--project` every time, link the project once with `npx firebase-tools use --add`; after that, `npm run deploy` builds and deploys. Find your project ID with `npx firebase-tools projects:list`.
+
+The site is served at `https://<project-id>.web.app`. The RPC URL is bundled into the public site, so restrict any provider API key to your Firebase domain.

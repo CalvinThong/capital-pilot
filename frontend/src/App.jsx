@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AccountBalanceWalletRounded, AddRounded, DashboardRounded, InsightsRounded } from '@mui/icons-material'
+import { AccountBalanceWalletRounded, AddRounded, DashboardRounded, InfoRounded, InsightsRounded } from '@mui/icons-material'
 import { Alert, AppBar, Box, Button, Chip, Container, Snackbar, Tab, Tabs, Toolbar, Typography } from '@mui/material'
 import { CreateVaultView } from './components/CreateVaultView.jsx'
+import { OverviewView } from './components/OverviewView.jsx'
 import { RegimeView } from './components/RegimeView.jsx'
 import { VaultsView } from './components/VaultsView.jsx'
 import { CONTRACT_CONFIG } from './config/contracts.js'
@@ -16,13 +17,14 @@ const EMPTY_DATA = {
 }
 
 const NAV_ITEMS = [
+  { label: 'Overview', icon: <InfoRounded />, value: 'overview' },
   { label: 'Market regime', icon: <InsightsRounded />, value: 'regimes' },
   { label: 'Agent vaults', icon: <DashboardRounded />, value: 'vaults' },
   { label: 'Create vault', icon: <AddRounded />, value: 'create' },
 ]
 
 function App() {
-  const [view, setView] = useState('regimes')
+  const [view, setView] = useState('overview')
   const [account, setAccount] = useState('')
   const [data, setData] = useState(EMPTY_DATA)
   const [vaultFilter, setVaultFilter] = useState('all')
@@ -124,6 +126,7 @@ function App() {
           {data.regimes.latest && <Chip size="small" label={data.regimes.latest.mode} color={data.regimes.latest.mode === 'Trading' ? 'success' : 'warning'} />}
         </Box>
 
+        {view === 'overview' && <OverviewView onNavigate={setView} />}
         {view === 'regimes' && <RegimeView regimes={data.regimes} loading={loading} onRefresh={refreshData} />}
         {view === 'vaults' && (
           <VaultsView vaults={data.vaults} account={account} filter={vaultFilter} onFilterChange={setVaultFilter} onRefresh={refreshData} loading={loading} />
