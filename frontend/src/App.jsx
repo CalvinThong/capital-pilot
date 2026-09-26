@@ -99,7 +99,7 @@ function App() {
             <Box className="brand-mark"><ShowChartRounded /></Box>
             <Box><Typography className="brand-name">Capital Pilot</Typography><Typography className="brand-subtitle">Autonomous vault console</Typography></Box>
           </Box>
-          <Box className="network-state"><span className="status-dot" />Localhost <span>#{CONTRACT_CONFIG.chainId}</span></Box>
+          <Box className="network-state"><span className="status-dot" />{CONTRACT_CONFIG.chainName} <span>#{CONTRACT_CONFIG.chainId}</span></Box>
           <Button variant={account ? 'outlined' : 'contained'} startIcon={<AccountBalanceWalletRounded />} onClick={handleConnect}>
             {account ? shortAddress(account) : 'Connect wallet'}
           </Button>

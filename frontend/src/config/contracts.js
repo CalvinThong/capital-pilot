@@ -1,8 +1,8 @@
 export const CONTRACT_CONFIG = Object.freeze({
-  chainId: 31337,
-  chainIdHex: '0x7a69',
-  chainName: 'Localhost 8545',
-  rpcUrl: 'http://127.0.0.1:8545',
-  factoryAddress: '0x00e10E92e7e6dbed7381281FADA27aF27Ff85C53',
-  regimeRegistryAddress: '0x7537eBa1893Af9778757FE76a87BaEBf7Dfa0Ca7',
+  chainId: 11155111,
+  chainIdHex: '0xaa36a7',
+  chainName: 'Sepolia',
+  rpcUrl: 'https://eth-sepolia.g.alchemy.com/v2/boiB274vLqLx5tJjXoZrR',
+  factoryAddress: '0xDa77ecc992A75623f098FBd7209C18A7115fbE53',
+  regimeRegistryAddress: '0x4c28EF3dDAAd6BAD2D9713aDEF903cA8fa05e967',
 })
