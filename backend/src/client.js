@@ -1,0 +1,76 @@
+import { AbiCoder, Contract, JsonRpcProvider, Wallet } from "ethers";
+import { ERC20_ABI, FACTORY_ABI, VAULT_ABI } from "./abi.js";
+
+// Mirrors AgentVault.DEFAULT_MARKET_MAKER_FEE_BPS; salt is always bytes32(0).
+const DEFAULT_MARKET_MAKER_FEE_BPS = 30;
+const DEFAULT_MARKET_MAKER_SALT = `0x${"0".repeat(64)}`;
+
+export class TradingClient {
+  constructor({ rpcUrl, factoryAddress, agentPrivateKey = "" } = {}) {
+    this.provider = new JsonRpcProvider(rpcUrl);
+    this.factory = new Contract(factoryAddress, FACTORY_ABI, this.provider);
+    this.agent = agentPrivateKey ? new Wallet(agentPrivateKey, this.provider) : null;
+  }
+
+  async listVaults() {
+    const count = Number(await this.factory.allVaultsCount());
+    return Promise.all(Array.from({ length: count }, (_, index) => this.factory.allVaults(index)));
+  }
+
+  async readVault(address) {
+    const vault = new Contract(address, VAULT_ABI, this.provider);
+    const [owner, authorizedAgent, assetA, assetB, strategy, mode, position, minTrade, maxTrade, amountIn, amountOut, entryPrice, activeStrategyHash] = await Promise.all([
+      vault.owner(), vault.authorizedAgent(), vault.assetA(), vault.assetB(), vault.strategyType(), vault.vaultMode(), vault.positionState(), vault.minTrade(), vault.maxTrade(), vault.positionAmountIn(), vault.positionAmountOut(), vault.entryPrice(), vault.activeStrategyHash()
+    ]);
+    const [balanceA, balanceB] = await Promise.all([
+      new Contract(assetA, ERC20_ABI, this.provider).balanceOf(address),
+      new Contract(assetB, ERC20_ABI, this.provider).balanceOf(address)
+    ]);
+    return {
+      address,
+      owner,
+      authorizedAgent,
+      assetA,
+      assetB,
+      strategy: Number(strategy),
+      mode: Number(mode),
+      position: Number(position),
+      minTrade,
+      maxTrade,
+      positionAmountIn: amountIn,
+      positionAmountOut: amountOut,
+      entryPrice,
+      activeStrategyHash,
+      balanceA,
+      balanceB
+    };
+  }
+
+  async buildSwapTradeData(takerAddress) {
+    const taker = await this.readVault(takerAddress);
+    const vaults = await this.listVaults();
+    const snapshots = await Promise.all(vaults.filter((address) => address.toLowerCase() !== takerAddress.toLowerCase()).map((address) => this.readVault(address)));
+    const maker = snapshots.find((candidate) => candidate.mode === 1 && candidate.assetA.toLowerCase() === taker.assetA.toLowerCase() && candidate.assetB.toLowerCase() === taker.assetB.toLowerCase());
+    if (!maker) return null;
+
+    const coder = AbiCoder.defaultAbiCoder();
+    // Matches XYCSwap.Strategy / AgentVault's internal strategy construction: (maker, token0, token1, feeBps, salt).
+    // AgentVault derives zeroForOne itself from which side of {token0,token1} is being sold, so it is not encoded here.
+    const strategy = {
+      maker: maker.address,
+      token0: maker.assetA,
+      token1: maker.assetB,
+      feeBps: DEFAULT_MARKET_MAKER_FEE_BPS,
+      salt: DEFAULT_MARKET_MAKER_SALT
+    };
+    return coder.encode(
+      ["tuple(address maker,address token0,address token1,uint256 feeBps,bytes32 salt)", "bytes"],
+      [strategy, "0x"]
+    );
+  }
+
+  vaultWithAgent(address) {
+    if (!this.agent) throw new Error("AGENT_PRIVATE_KEY is required for execution");
+    return new Contract(address, VAULT_ABI, this.agent);
+  }
+}
