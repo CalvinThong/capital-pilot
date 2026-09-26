@@ -1,9 +1,8 @@
 import { AbiCoder, Contract, JsonRpcProvider, NonceManager, Wallet } from "ethers";
 import { ERC20_ABI, FACTORY_ABI, MARKET_REGIME_REGISTRY_ABI, VAULT_ABI } from "./abi.js";
 
-// Mirrors AgentVault.DEFAULT_MARKET_MAKER_FEE_BPS; salt is always bytes32(0).
+// Mirrors AgentVault.DEFAULT_MARKET_MAKER_FEE_BPS; the active salt is read from each maker vault.
 const DEFAULT_MARKET_MAKER_FEE_BPS = 30;
-const DEFAULT_MARKET_MAKER_SALT = `0x${"0".repeat(64)}`;
 
 export class TradingClient {
   constructor({ rpcUrl, factoryAddress, regimeRegistryAddress = "", agentPrivateKey = "" } = {}) {
@@ -36,8 +35,8 @@ export class TradingClient {
 
   async readVault(address) {
     const vault = new Contract(address, VAULT_ABI, this.provider);
-    const [owner, authorizedAgent, assetA, assetB, strategy, mode, position, minTrade, maxTrade, amountIn, amountOut, entryPrice, pnl, totalClosedPositionAmountIn, activeStrategyHash] = await Promise.all([
-      vault.owner(), vault.authorizedAgent(), vault.assetA(), vault.assetB(), vault.strategyType(), vault.vaultMode(), vault.positionState(), vault.minTrade(), vault.maxTrade(), vault.positionAmountIn(), vault.positionAmountOut(), vault.entryPrice(), vault.pnl(), vault.totalClosedPositionAmountIn(), vault.activeStrategyHash()
+    const [owner, authorizedAgent, assetA, assetB, strategy, mode, position, minTrade, maxTrade, amountIn, amountOut, entryPrice, pnl, totalClosedPositionAmountIn, activeStrategyHash, activeStrategySalt] = await Promise.all([
+      vault.owner(), vault.authorizedAgent(), vault.assetA(), vault.assetB(), vault.strategyType(), vault.vaultMode(), vault.positionState(), vault.minTrade(), vault.maxTrade(), vault.positionAmountIn(), vault.positionAmountOut(), vault.entryPrice(), vault.pnl(), vault.totalClosedPositionAmountIn(), vault.activeStrategyHash(), vault.activeStrategySalt()
     ]);
     const [balanceA, balanceB] = await Promise.all([
       new Contract(assetA, ERC20_ABI, this.provider).balanceOf(address),
@@ -60,6 +59,7 @@ export class TradingClient {
       pnl,
       totalClosedPositionAmountIn,
       activeStrategyHash,
+      activeStrategySalt,
       balanceA,
       balanceB
     };
@@ -80,7 +80,7 @@ export class TradingClient {
       token0: maker.assetA,
       token1: maker.assetB,
       feeBps: DEFAULT_MARKET_MAKER_FEE_BPS,
-      salt: DEFAULT_MARKET_MAKER_SALT
+      salt: maker.activeStrategySalt
     };
     return coder.encode(
       ["tuple(address maker,address token0,address token1,uint256 feeBps,bytes32 salt)", "bytes"],
@@ -98,15 +98,29 @@ export class TradingClient {
     if (!this.agent) throw new Error("AGENT_PRIVATE_KEY is required for execution");
     return this.regimeRegistry.connect(this.agent);
   }
+
+  marketDecisionIdFromReceipt(receipt) {
+    for (const entry of receipt.logs) {
+      try {
+        const parsed = this.regimeRegistry.interface.parseLog(entry);
+        if (parsed?.name === "MarketRegimeRecorded") return parsed.args.index;
+      } catch {}
+    }
+    throw new Error("MarketRegimeRecorded event was not found in the transaction receipt");
+  }
 }
 
 function formatRegimeRecord(record) {
   const recordedAt = Number(record.recordedAt);
   return {
     mode: Number(record.regime) === 0 ? "MARKET_MAKER" : "TRADING",
-    confidence: Number(record.confidenceBps) / 10_000,
+    selectedStrategyMask: Number(record.selectedStrategyMask),
+    confidence: Number(record.regimeConfidenceBps) / 10_000,
+    strategyConfidence: Number(record.strategyConfidenceBps) / 10_000,
+    strategyConfidenceById: record.strategyConfidenceById.map((value) => Number(value) / 10_000),
     recordedAt,
     recordedAtIso: new Date(recordedAt * 1000).toISOString(),
-    reason: record.reason
+    reason: record.regimeReason,
+    strategyReason: record.strategyReason
   };
 }

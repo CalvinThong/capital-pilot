@@ -9,12 +9,15 @@ import {MockERC20} from "./MockERC20.sol";
 contract MockAqua is IAqua {
     mapping(address => mapping(address => mapping(bytes32 => mapping(address => uint256)))) private _balances;
     mapping(address => mapping(address => mapping(bytes32 => bool))) private _active;
+    mapping(address => mapping(address => mapping(bytes32 => bool))) private _used;
 
     function ship(address app, bytes calldata strategy, address[] calldata tokens, uint256[] calldata amounts) external returns (bytes32 strategyHash) {
         strategyHash = keccak256(strategy);
+        if (_used[msg.sender][app][strategyHash]) revert StrategiesMustBeImmutable(app, strategyHash);
         for (uint256 i = 0; i < tokens.length; i++) {
             _balances[msg.sender][app][strategyHash][tokens[i]] = amounts[i];
         }
+        _used[msg.sender][app][strategyHash] = true;
         _active[msg.sender][app][strategyHash] = true;
     }
 

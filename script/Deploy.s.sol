@@ -27,8 +27,8 @@ contract Deploy is Script {
         vm.startBroadcast(deployerPrivateKey);
         XYCSwap app = new XYCSwap(IAqua(aqua));
         AquaTradingAdapter adapter = new AquaTradingAdapter(address(app), aqua);
-        AgentFactory factory = new AgentFactory(assetA, assetB, address(adapter), aqua, authorizedAgent);
         MarketRegimeRegistry regimeRegistry = new MarketRegimeRegistry(authorizedAgent);
+        AgentFactory factory = new AgentFactory(assetA, assetB, address(adapter), aqua, address(regimeRegistry), authorizedAgent);
         vm.stopBroadcast();
 
         deployment = Deployment({

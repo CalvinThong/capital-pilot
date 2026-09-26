@@ -129,6 +129,7 @@ async function loadVault(provider, address, assetA, assetB) {
     vault.pnl().then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: 0n })),
     vault.totalClosedPositionAmountIn().then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: 0n })),
   ])
+  const positionHistory = await loadPositionHistory(vault)
   const [owner, strategy, mode, position, minTrade, maxTrade, positionAmountIn, positionAmountOut, balanceA, balanceB] = core
   const pnlSupported = pnlResult.ok && costResult.ok
   const pnlPercent = pnlSupported && costResult.value > 0n
@@ -149,6 +150,7 @@ async function loadVault(provider, address, assetA, assetB) {
     balanceB,
     pnl: pnlSupported ? pnlResult.value : null,
     pnlPercent,
+    positionHistory,
     assetA,
     assetB,
   }
@@ -165,13 +167,43 @@ async function loadRegimes(provider) {
     const history = records.map((record, index) => ({
       index: offset + index,
       mode: Number(record.regime) === 0 ? 'Market Maker' : 'Trading',
-      confidence: Number(record.confidenceBps) / 100,
+      selectedStrategies: STRATEGIES.filter((_, strategyId) => (Number(record.selectedStrategyMask) & (1 << strategyId)) !== 0),
+      confidence: Number(record.regimeConfidenceBps) / 100,
+      strategyConfidence: Number(record.strategyConfidenceBps) / 100,
+      strategyConfidenceById: record.strategyConfidenceById.map((value) => Number(value) / 100),
       recordedAt: Number(record.recordedAt),
-      reason: record.reason,
+      reason: record.regimeReason,
+      strategyReason: record.strategyReason,
     })).reverse()
     return { latest: history[0], history }
   } catch {
     return { latest: null, history: [] }
+  }
+}
+
+async function loadPositionHistory(vault) {
+  try {
+    const count = Number(await vault.positionHistoryCount())
+    if (count === 0) return []
+    const offset = Math.max(0, count - 100)
+    const records = await vault.getPositionRecords(offset, count - offset)
+    return records.map((record, index) => ({
+      positionId: offset + index,
+      openDecisionId: Number(record.openDecisionId),
+      closeDecisionId: Number(record.closeDecisionId),
+      openedAt: Number(record.openedAt),
+      closedAt: Number(record.closedAt),
+      openConfidence: Number(record.openConfidenceBps) / 100,
+      closeConfidence: Number(record.closeConfidenceBps) / 100,
+      amountIn: record.amountIn,
+      positionAmountOut: record.positionAmountOut,
+      closeAmountOut: record.closeAmountOut,
+      realizedPnl: record.realizedPnl,
+      openReason: record.openReason,
+      closeReason: record.closeReason,
+    })).reverse()
+  } catch {
+    return []
   }
 }
 

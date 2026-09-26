@@ -40,7 +40,7 @@ export function proposeMarketMakerAction(vault, marketMode) {
   return { type: "HOLD", reason: "Vault already matches global market mode" };
 }
 
-export function proposeSelectedStrategyEntry(vault, strategyDecision, tradeData = "") {
+export function proposeSelectedStrategyEntry(vault, strategyDecision, tradeData = "", decisionId = 0) {
   if (vault.mode !== 0 || vault.position !== 0) {
     return { type: "HOLD", reason: "Vault is not flat and trading" };
   }
@@ -55,6 +55,7 @@ export function proposeSelectedStrategyEntry(vault, strategyDecision, tradeData 
     amountIn: vault.minTrade,
     minAmountOut: 0n,
     tradeData,
+    decisionId,
     confidence: strategyDecision.confidence,
     reason: strategyDecision.reason,
     supportingEvidence: strategyDecision.supportingEvidence || [],
@@ -62,7 +63,7 @@ export function proposeSelectedStrategyEntry(vault, strategyDecision, tradeData 
   };
 }
 
-export function proposeVaultTradingAction(vault, market, decision, tradeData = "") {
+export function proposeVaultTradingAction(vault, market, decision, tradeData = "", decisionId = 0) {
   if (vault.mode !== 0) return { type: "HOLD", reason: "Vault is not in trading mode" };
   if (decision) {
     return {
@@ -70,6 +71,7 @@ export function proposeVaultTradingAction(vault, market, decision, tradeData = "
       amountIn: BigInt(decision.amountIn || 0),
       minAmountOut: BigInt(decision.minAmountOut || 0),
       tradeData,
+      decisionId,
       confidence: decision.confidence,
       reason: decision.reason
     };
@@ -85,6 +87,7 @@ export function proposeVaultTradingAction(vault, market, decision, tradeData = "
     ...entry,
     type: entry.action,
     amountIn: entry.amountIn === 0 ? 0n : entry.amountIn,
-    tradeData
+    tradeData,
+    decisionId
   };
 }

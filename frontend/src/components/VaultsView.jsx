@@ -70,8 +70,55 @@ function VaultCard({ vault, account }) {
           tone={vault.pnl === null ? '' : pnlPositive ? 'positive' : 'negative'}
         />
       </Box>
+      {vault.positionHistory.length > 0 && <PositionHistory vault={vault} />}
       <Typography variant="caption" color="text.secondary" className="owner-line">Owner {shortAddress(vault.owner)}</Typography>
     </Paper>
+  )
+}
+
+function PositionHistory({ vault }) {
+  return (
+    <details className="position-history">
+      <summary>Position history <span>{vault.positionHistory.length}</span></summary>
+      <Box className="position-records">
+        {vault.positionHistory.map((record) => (
+          <Box className="position-record" key={record.positionId}>
+            <DecisionLine
+              action="Opened"
+              decisionId={record.openDecisionId}
+              timestamp={record.openedAt}
+              confidence={record.openConfidence}
+              reason={record.openReason}
+            />
+            {record.closedAt > 0 && (
+              <DecisionLine
+                action="Closed"
+                decisionId={record.closeDecisionId}
+                timestamp={record.closedAt}
+                confidence={record.closeConfidence}
+                reason={record.closeReason}
+                result={`${record.realizedPnl >= 0n ? '+' : ''}${formatToken(record.realizedPnl, vault.assetA)} ${vault.assetA.symbol}`}
+              />
+            )}
+          </Box>
+        ))}
+      </Box>
+    </details>
+  )
+}
+
+function DecisionLine({ action, decisionId, timestamp, confidence, reason, result }) {
+  return (
+    <Box className="decision-line">
+      <Box className="decision-line-heading">
+        <strong>{action}</strong>
+        <span className="mono">Decision #{decisionId}</span>
+        <span>{confidence.toFixed(2)}%</span>
+      </Box>
+      <Typography variant="caption" color="text.secondary">{new Date(timestamp * 1000).toLocaleString()}</Typography>
+      <Typography variant="body2">{reason}</Typography>
+      {result && <Typography className="decision-result">Realized {result}</Typography>}
+    </Box>
   )
 }
 

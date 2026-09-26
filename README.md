@@ -55,16 +55,9 @@ Then deploy with the deployer key supplied through Foundry:
 forge script script/Deploy.s.sol --rpc-url $RPC_URL --private-key $DEPLOYER_PRIVATE_KEY --broadcast
 ```
 
-The production script deploys `XYCSwap` (bound to the real Aqua registry), `AquaTradingAdapter`, `AgentFactory`, and `MarketRegimeRegistry` in the same broadcast sequence. It does not deploy or modify the official Aqua registry. Set the backend's `REGIME_REGISTRY_ADDRESS` to the returned registry address.
+The production script deploys `XYCSwap` (bound to the real Aqua registry), `AquaTradingAdapter`, `MarketRegimeRegistry`, and `AgentFactory` in the same broadcast sequence. It does not deploy or modify the official Aqua registry. Set the backend's `REGIME_REGISTRY_ADDRESS` to the returned registry address.
 
-For an existing deployment, deploy only the registry:
-
-```powershell
-forge script script/DeployMarketRegimeRegistry.s.sol:DeployMarketRegimeRegistry `
-	--rpc-url $env:RPC_URL `
-	--private-key $env:PRIVATE_KEY `
-	--broadcast
-```
+The factory binds every new vault to its market-regime registry. Changes to the linked decision and position-history schema therefore require redeploying the registry, factory, and vaults together.
 
 To deploy a vault through an existing factory:
 

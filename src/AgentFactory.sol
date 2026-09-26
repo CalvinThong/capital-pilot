@@ -12,6 +12,7 @@ contract AgentFactory {
     address public immutable assetB;
     address public immutable adapter;
     address public immutable aqua;
+    address public immutable marketRegimeRegistry;
     address public authorizedAgent;
 
     mapping(address => address[]) public userVaults;
@@ -26,18 +27,19 @@ contract AgentFactory {
         _;
     }
 
-    constructor(address assetA_, address assetB_, address adapter_, address aqua_, address authorizedAgent_) {
-        if (assetA_ == address(0) || assetB_ == address(0) || adapter_ == address(0) || aqua_ == address(0) || authorizedAgent_ == address(0)) revert ZeroAddress();
+    constructor(address assetA_, address assetB_, address adapter_, address aqua_, address marketRegimeRegistry_, address authorizedAgent_) {
+        if (assetA_ == address(0) || assetB_ == address(0) || adapter_ == address(0) || aqua_ == address(0) || marketRegimeRegistry_ == address(0) || authorizedAgent_ == address(0)) revert ZeroAddress();
         owner = msg.sender;
         assetA = assetA_;
         assetB = assetB_;
         adapter = adapter_;
         aqua = aqua_;
+        marketRegimeRegistry = marketRegimeRegistry_;
         authorizedAgent = authorizedAgent_;
     }
 
     function createVault(StrategyType strategy, uint256 minTrade, uint256 maxTrade) external returns (address vault) {
-        vault = address(new AgentVault(msg.sender, authorizedAgent, assetA, assetB, adapter, aqua, strategy, minTrade, maxTrade));
+        vault = address(new AgentVault(msg.sender, authorizedAgent, assetA, assetB, adapter, aqua, marketRegimeRegistry, strategy, minTrade, maxTrade));
         userVaults[msg.sender].push(vault);
         isVault[vault] = true;
         allVaults.push(vault);

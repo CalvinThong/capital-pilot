@@ -5,7 +5,7 @@ import {MarketRegimeRegistry} from "../src/MarketRegimeRegistry.sol";
 
 contract RegimePublisherCaller {
     function record(MarketRegimeRegistry registry) external {
-        registry.recordRegime(MarketRegimeRegistry.MarketRegime.Trading, 8_000, "unauthorized");
+        registry.recordDecision(MarketRegimeRegistry.MarketRegime.Trading, 1, 8_000, 8_000, [uint16(8_000), 0, 0], "unauthorized", "unauthorized");
     }
 }
 
@@ -18,32 +18,38 @@ contract MarketRegimeRegistryTest {
 
     function testRecordsTimestampedHistoryAndLatestValue() public {
         setUp();
-        registry.recordRegime(MarketRegimeRegistry.MarketRegime.MarketMaker, 7_500, "Range-bound market");
-        registry.recordRegime(MarketRegimeRegistry.MarketRegime.Trading, 8_250, "Strong directional trend");
+        registry.recordDecision(MarketRegimeRegistry.MarketRegime.MarketMaker, 0, 7_500, 0, [uint16(0), 0, 0], "Range-bound market", "");
+        registry.recordDecision(MarketRegimeRegistry.MarketRegime.Trading, 5, 8_250, 7_800, [uint16(8_100), 0, 7_200], "Strong directional trend", "Momentum and DCA selected");
 
         require(registry.historyCount() == 2);
 
         MarketRegimeRegistry.RegimeRecord memory first = registry.regimeAt(0);
         require(first.regime == MarketRegimeRegistry.MarketRegime.MarketMaker);
-        require(first.confidenceBps == 7_500);
+        require(first.regimeConfidenceBps == 7_500);
         require(first.recordedAt == block.timestamp);
-        require(keccak256(bytes(first.reason)) == keccak256(bytes("Range-bound market")));
+        require(keccak256(bytes(first.regimeReason)) == keccak256(bytes("Range-bound market")));
 
         MarketRegimeRegistry.RegimeRecord memory latest = registry.latestRegime();
         require(latest.regime == MarketRegimeRegistry.MarketRegime.Trading);
-        require(latest.confidenceBps == 8_250);
+        require(latest.regimeConfidenceBps == 8_250);
+        require(latest.selectedStrategyMask == 5);
+        require(latest.strategyConfidenceById[0] == 8_100);
+        require(latest.strategyConfidenceById[2] == 7_200);
+        require(registry.isStrategySelected(1, 0));
+        require(!registry.isStrategySelected(1, 1));
+        require(registry.isStrategySelected(1, 2));
     }
 
     function testReturnsPaginatedHistory() public {
         setUp();
-        registry.recordRegime(MarketRegimeRegistry.MarketRegime.MarketMaker, 6_000, "one");
-        registry.recordRegime(MarketRegimeRegistry.MarketRegime.Trading, 7_000, "two");
-        registry.recordRegime(MarketRegimeRegistry.MarketRegime.MarketMaker, 8_000, "three");
+        registry.recordDecision(MarketRegimeRegistry.MarketRegime.MarketMaker, 0, 6_000, 0, [uint16(0), 0, 0], "one", "");
+        registry.recordDecision(MarketRegimeRegistry.MarketRegime.Trading, 1, 7_000, 7_000, [uint16(7_000), 0, 0], "two", "momentum");
+        registry.recordDecision(MarketRegimeRegistry.MarketRegime.MarketMaker, 0, 8_000, 0, [uint16(0), 0, 0], "three", "");
 
         MarketRegimeRegistry.RegimeRecord[] memory records = registry.getRegimes(1, 10);
         require(records.length == 2);
         require(records[0].regime == MarketRegimeRegistry.MarketRegime.Trading);
-        require(keccak256(bytes(records[1].reason)) == keccak256(bytes("three")));
+        require(keccak256(bytes(records[1].regimeReason)) == keccak256(bytes("three")));
     }
 
     function testRejectsUnauthorizedPublisher() public {
@@ -56,7 +62,14 @@ contract MarketRegimeRegistryTest {
 
     function testRejectsInvalidConfidence() public {
         setUp();
-        try registry.recordRegime(MarketRegimeRegistry.MarketRegime.Trading, 10_001, "invalid") {
+        try registry.recordDecision(MarketRegimeRegistry.MarketRegime.Trading, 1, 10_001, 8_000, [uint16(8_000), 0, 0], "invalid", "invalid") {
+            revert("expected revert");
+        } catch {}
+    }
+
+    function testRejectsStrategiesForMarketMakerRegime() public {
+        setUp();
+        try registry.recordDecision(MarketRegimeRegistry.MarketRegime.MarketMaker, 1, 8_000, 8_000, [uint16(8_000), 0, 0], "range", "invalid strategy") {
             revert("expected revert");
         } catch {}
     }

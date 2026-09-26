@@ -19,33 +19,45 @@ async function scan() {
     : await llmAgents.classifyMarket(market);
   const globalMode = globalDecision.mode || fallbackGlobalMode(market);
   log("llm_a_market_regime", { mode: globalMode, decision: globalDecision });
-  await recordMarketRegime(globalMode, globalDecision);
-
-  const addresses = await client.listVaults();
-  const vaults = await Promise.all(addresses.map((address) => client.readVault(address)));
 
   if (globalMode === GLOBAL_MODES.MARKET_MAKER) {
-    await runMarketMakerMode(vaults, globalMode);
+    const decisionExecution = await recordMarketDecision(globalMode, globalDecision);
+    if (config.executionEnabled && !decisionExecution.submitted) return;
+    const vaults = await readVaults();
+    await runMarketMakerMode(vaults, market, globalMode, decisionExecution.decisionId ?? 0);
     return;
   }
 
-  await runTradingMode(vaults, market, globalMode);
+  const llmStrategyDecision = config.forceStrategies.size
+    ? { strategies: [...config.forceStrategies], confidence: 1, reason: "FORCE_STRATEGIES override" }
+    : await llmAgents.selectStrategies(market);
+  const strategyDecision = applyForcedTradingStrategyFallback(llmStrategyDecision, config.forceGlobalMode);
+  log("llm_b_strategy_selection", { selectedStrategies: strategyDecision.strategies, decision: strategyDecision });
+  const decisionExecution = await recordMarketDecision(globalMode, globalDecision, strategyDecision);
+  if (config.executionEnabled && !decisionExecution.submitted) return;
+
+  await runTradingMode(await readVaults(), market, globalMode, strategyDecision, decisionExecution.decisionId ?? 0);
 }
 
-async function runMarketMakerMode(vaults, globalMode) {
+async function readVaults() {
+  const addresses = await client.listVaults();
+  return Promise.all(addresses.map((address) => client.readVault(address)));
+}
+
+async function runMarketMakerMode(vaults, market, globalMode, decisionId) {
   for (const vault of vaults) {
+    if (vault.position === 1) {
+      await evaluateClose(vault, market, decisionId);
+      continue;
+    }
+
     const proposal = proposeMarketMakerAction(vault, globalMode);
     await executeAndLog("market_maker_action", vault, proposal);
   }
 }
 
-async function runTradingMode(vaults, market, globalMode) {
-  const llmStrategyDecision = config.forceStrategies.size
-    ? { strategies: [...config.forceStrategies], confidence: 1, reason: "FORCE_STRATEGIES override" }
-    : await llmAgents.selectStrategies(market);
-  const strategyDecision = applyForcedTradingStrategyFallback(llmStrategyDecision, config.forceGlobalMode);
+async function runTradingMode(vaults, market, globalMode, strategyDecision, decisionId) {
   const selectedStrategyIds = new Set(strategyDecision.strategies.map((name) => STRATEGY_NAMES.indexOf(name)));
-  log("llm_b_strategy_selection", { selectedStrategies: strategyDecision.strategies, decision: strategyDecision });
 
   for (const vault of vaults) {
     if (config.marketMakerOnlyVaults.has(vault.address.toLowerCase())) {
@@ -58,7 +70,7 @@ async function runTradingMode(vaults, market, globalMode) {
     if (!tradingVault) continue;
 
     if (tradingVault.position === 1) {
-      await evaluateClose(tradingVault, market);
+      await evaluateClose(tradingVault, market, decisionId);
       continue;
     }
 
@@ -82,8 +94,8 @@ async function runTradingMode(vaults, market, globalMode) {
         }
       : strategyDecision;
     const proposal = strategyDecision.fallback
-      ? proposeVaultTradingAction(tradingVault, market, null, config.tradeData)
-      : proposeSelectedStrategyEntry(tradingVault, entryDecision, config.tradeData);
+      ? proposeVaultTradingAction(tradingVault, market, null, config.tradeData, decisionId)
+      : proposeSelectedStrategyEntry(tradingVault, entryDecision, config.tradeData, decisionId);
     await executeAndLog("entry_action", tradingVault, proposal);
   }
 }
@@ -100,11 +112,11 @@ async function ensureTradingMode(vault, globalMode) {
   return refreshed;
 }
 
-async function evaluateClose(vault, market) {
+async function evaluateClose(vault, market, decisionId) {
   const decision = await llmAgents.decideClose({ vault, market });
   const proposal = decision.action === "FALLBACK"
     ? { type: "HOLD", reason: decision.reason }
-    : proposeVaultTradingAction(vault, market, decision, config.tradeData);
+    : proposeVaultTradingAction(vault, market, decision, config.tradeData, decisionId);
   log("llm_c_close_decision", { vault: vault.address, decision });
   await executeAndLog("close_action", vault, proposal);
 }
@@ -122,17 +134,19 @@ async function executeAndLog(event, vault, proposal) {
   return execution;
 }
 
-async function recordMarketRegime(mode, decision) {
+async function recordMarketDecision(mode, regimeDecision, strategyDecision = {}) {
   try {
-    const execution = await executor.recordMarketRegime(mode, decision);
-    log("market_regime_recorded", { mode, decision, execution });
+    const execution = await executor.recordMarketDecision(mode, regimeDecision, strategyDecision);
+    log("market_regime_recorded", { mode, decision: regimeDecision, execution });
+    return execution;
   } catch (error) {
     log("market_regime_record_failed", {
       mode,
-      decision,
+      decision: regimeDecision,
       execution: { submitted: false, status: "failed" },
       proposal: { reason: error.message }
     });
+    return { submitted: false, status: "failed", reason: error.message };
   }
 }
 
@@ -156,6 +170,7 @@ function log(event, details) {
     submitted: details.execution?.submitted,
     status: details.execution?.status,
     txHash: details.execution?.hash,
+    decisionId: details.proposal?.decisionId ?? details.execution?.decisionId,
     reason: details.proposal?.reason ?? details.decision?.reason
   };
 

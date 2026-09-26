@@ -20,6 +20,8 @@ export const VAULT_ABI = [
   'function positionAmountOut() view returns (uint256)',
   'function pnl() view returns (int256)',
   'function totalClosedPositionAmountIn() view returns (uint256)',
+  'function positionHistoryCount() view returns (uint256)',
+  'function getPositionRecords(uint256 offset,uint256 limit) view returns (tuple(uint256 openDecisionId,uint256 closeDecisionId,uint64 openedAt,uint64 closedAt,uint16 openConfidenceBps,uint16 closeConfidenceBps,uint256 amountIn,uint256 positionAmountOut,uint256 closeAmountOut,int256 realizedPnl,string openReason,string closeReason)[])',
   'function deposit(uint256 amountA,uint256 amountB)',
 ]
 
@@ -32,6 +34,6 @@ export const ERC20_ABI = [
 
 export const REGIME_REGISTRY_ABI = [
   'function historyCount() view returns (uint256)',
-  'function latestRegime() view returns (tuple(uint8 regime,uint16 confidenceBps,uint64 recordedAt,string reason))',
-  'function getRegimes(uint256 offset,uint256 limit) view returns (tuple(uint8 regime,uint16 confidenceBps,uint64 recordedAt,string reason)[])',
+  'function latestRegime() view returns (tuple(uint8 regime,uint8 selectedStrategyMask,uint16 regimeConfidenceBps,uint16 strategyConfidenceBps,uint16[3] strategyConfidenceById,uint64 recordedAt,string regimeReason,string strategyReason))',
+  'function getRegimes(uint256 offset,uint256 limit) view returns (tuple(uint8 regime,uint8 selectedStrategyMask,uint16 regimeConfidenceBps,uint16 strategyConfidenceBps,uint16[3] strategyConfidenceById,uint64 recordedAt,string regimeReason,string strategyReason)[])',
 ]

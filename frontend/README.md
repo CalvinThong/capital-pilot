@@ -4,7 +4,7 @@ React, MUI, ethers, and Vite dashboard for the local Capital Pilot deployment.
 
 ## Run locally
 
-Start Anvil and deploy the contracts, then update `src/config/contracts.js` with the active factory and market-regime registry addresses.
+Start Anvil and deploy the contracts together, then update `src/config/contracts.js` with the active factory and market-regime registry addresses. The factory and all vaults must reference that same registry.
 
 ```powershell
 npm install
@@ -17,7 +17,7 @@ Open `http://127.0.0.1:5173` and connect MetaMask to chain ID `31337` at `http:/
 
 Creating and funding a vault requires MetaMask confirmations for the factory deployment, each nonzero ERC-20 approval, and the final deposit. The deposited asset-A amount is used as the vault's maximum trade size.
 
-Realized PnL percentage requires vaults deployed from the current `AgentVault` bytecode. Older local vaults remain visible but are marked as legacy vaults.
+Realized PnL percentage and linked position decisions require vaults deployed from the current `AgentVault` bytecode. Older local vaults remain visible but are marked as legacy vaults.
 
 ## Checks
 

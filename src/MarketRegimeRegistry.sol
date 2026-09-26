@@ -5,6 +5,7 @@ contract MarketRegimeRegistry {
     error Unauthorized();
     error ZeroAddress();
     error InvalidConfidence();
+    error InvalidStrategyMask();
     error ReasonTooLong();
     error InvalidRange();
     error NoRecords();
@@ -19,9 +20,13 @@ contract MarketRegimeRegistry {
 
     struct RegimeRecord {
         MarketRegime regime;
-        uint16 confidenceBps;
+        uint8 selectedStrategyMask;
+        uint16 regimeConfidenceBps;
+        uint16 strategyConfidenceBps;
+        uint16[3] strategyConfidenceById;
         uint64 recordedAt;
-        string reason;
+        string regimeReason;
+        string strategyReason;
     }
 
     address public immutable owner;
@@ -31,9 +36,12 @@ contract MarketRegimeRegistry {
     event MarketRegimeRecorded(
         uint256 indexed index,
         MarketRegime indexed regime,
-        uint16 confidenceBps,
+        uint8 selectedStrategyMask,
+        uint16 regimeConfidenceBps,
+        uint16 strategyConfidenceBps,
         uint64 recordedAt,
-        string reason
+        string regimeReason,
+        string strategyReason
     );
     event AuthorizedPublisherUpdated(address indexed oldPublisher, address indexed newPublisher);
 
@@ -53,20 +61,47 @@ contract MarketRegimeRegistry {
         authorizedPublisher = authorizedPublisher_;
     }
 
-    function recordRegime(MarketRegime regime, uint16 confidenceBps, string calldata reason) external onlyPublisher {
-        if (confidenceBps > 10_000) revert InvalidConfidence();
-        if (bytes(reason).length > MAX_REASON_LENGTH) revert ReasonTooLong();
+    function recordDecision(
+        MarketRegime regime,
+        uint8 selectedStrategyMask,
+        uint16 regimeConfidenceBps,
+        uint16 strategyConfidenceBps,
+        uint16[3] calldata strategyConfidenceById,
+        string calldata regimeReason,
+        string calldata strategyReason
+    ) external onlyPublisher returns (uint256 index) {
+        if (selectedStrategyMask > 7) revert InvalidStrategyMask();
+        if (regime == MarketRegime.MarketMaker && selectedStrategyMask != 0) revert InvalidStrategyMask();
+        if (regimeConfidenceBps > 10_000 || strategyConfidenceBps > 10_000) revert InvalidConfidence();
+        for (uint256 strategyId; strategyId < 3; ++strategyId) {
+            if (strategyConfidenceById[strategyId] > 10_000) revert InvalidConfidence();
+            if ((selectedStrategyMask & uint8(1 << strategyId)) == 0 && strategyConfidenceById[strategyId] != 0) revert InvalidStrategyMask();
+        }
+        if (bytes(regimeReason).length > MAX_REASON_LENGTH || bytes(strategyReason).length > MAX_REASON_LENGTH) revert ReasonTooLong();
 
         uint64 recordedAt = uint64(block.timestamp);
-        uint256 index = _history.length;
+        index = _history.length;
         _history.push(RegimeRecord({
             regime: regime,
-            confidenceBps: confidenceBps,
+            selectedStrategyMask: selectedStrategyMask,
+            regimeConfidenceBps: regimeConfidenceBps,
+            strategyConfidenceBps: strategyConfidenceBps,
+            strategyConfidenceById: strategyConfidenceById,
             recordedAt: recordedAt,
-            reason: reason
+            regimeReason: regimeReason,
+            strategyReason: strategyReason
         }));
 
-        emit MarketRegimeRecorded(index, regime, confidenceBps, recordedAt, reason);
+        emit MarketRegimeRecorded(
+            index,
+            regime,
+            selectedStrategyMask,
+            regimeConfidenceBps,
+            strategyConfidenceBps,
+            recordedAt,
+            regimeReason,
+            strategyReason
+        );
     }
 
     function historyCount() external view returns (uint256) {
@@ -75,6 +110,15 @@ contract MarketRegimeRegistry {
 
     function regimeAt(uint256 index) external view returns (RegimeRecord memory) {
         return _history[index];
+    }
+
+    function decisionExists(uint256 index) external view returns (bool) {
+        return index < _history.length;
+    }
+
+    function isStrategySelected(uint256 index, uint8 strategyId) external view returns (bool) {
+        if (index >= _history.length || strategyId >= 3) return false;
+        return (_history[index].selectedStrategyMask & (uint8(1) << strategyId)) != 0;
     }
 
     function latestRegime() external view returns (RegimeRecord memory) {

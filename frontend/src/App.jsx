@@ -124,7 +124,7 @@ function App() {
           {data.regimes.latest && <Chip size="small" label={data.regimes.latest.mode} color={data.regimes.latest.mode === 'Trading' ? 'success' : 'warning'} />}
         </Box>
 
-        {view === 'regimes' && <RegimeView regimes={data.regimes} loading={loading} />}
+        {view === 'regimes' && <RegimeView regimes={data.regimes} loading={loading} onRefresh={refreshData} />}
         {view === 'vaults' && (
           <VaultsView vaults={data.vaults} account={account} filter={vaultFilter} onFilterChange={setVaultFilter} onRefresh={refreshData} loading={loading} />
         )}

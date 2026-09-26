@@ -10,6 +10,7 @@ import {IAqua} from "../src/interfaces/IAqua.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockAqua} from "./mocks/MockAqua.sol";
 import {UnauthorizedCaller} from "./mocks/UnauthorizedCaller.sol";
+import {MarketRegimeRegistry} from "../src/MarketRegimeRegistry.sol";
 
 contract AgentVaultTest {
     MockERC20 private usdt;
@@ -19,6 +20,7 @@ contract AgentVaultTest {
     AquaTradingAdapter private adapter;
     AgentFactory private factory;
     AgentVault private vault;
+    MarketRegimeRegistry private registry;
     UnauthorizedCaller private unauthorized;
 
     function setUp() public {
@@ -27,7 +29,9 @@ contract AgentVaultTest {
         aqua = new MockAqua();
         app = new XYCSwap(IAqua(address(aqua)));
         adapter = new AquaTradingAdapter(address(app), address(aqua));
-        factory = new AgentFactory(address(usdt), address(btc), address(adapter), address(aqua), address(this));
+        registry = new MarketRegimeRegistry(address(this));
+        registry.recordDecision(MarketRegimeRegistry.MarketRegime.Trading, 7, 8_000, 8_000, [uint16(8_000), 8_000, 8_000], "Trading regime", "All strategies selected");
+        factory = new AgentFactory(address(usdt), address(btc), address(adapter), address(aqua), address(registry), address(this));
         vault = AgentVault(factory.createVault(StrategyType.Momentum, 100, 1000));
         unauthorized = new UnauthorizedCaller();
         usdt.mint(address(this), 5000);
@@ -46,6 +50,14 @@ contract AgentVaultTest {
 
     function _tradeData(address maker) private view returns (bytes memory) {
         return abi.encode(_makerStrategy(maker), bytes(""));
+    }
+
+    function _executeTrade(AgentVault target, uint256 amountIn, uint256 minAmountOut, bytes memory tradeData) private {
+        target.executeTrade(amountIn, minAmountOut, tradeData, 0, 8_000, "Open decision");
+    }
+
+    function _closeTrade(AgentVault target, uint256 minAmountOut, bytes memory tradeData) private {
+        target.closeTrade(minAmountOut, tradeData, 0, 7_500, "Close decision");
     }
 
     /// Creates and ships a deeply-liquid market-maker vault to serve as a stable counterparty.
@@ -67,7 +79,7 @@ contract AgentVaultTest {
     }
 
     function testRejectsInvalidBounds() public {
-        try new AgentVault(address(this), address(this), address(1), address(2), address(3), address(4), StrategyType.DCA, 200, 100) {
+        try new AgentVault(address(this), address(this), address(1), address(2), address(3), address(4), address(registry), StrategyType.DCA, 200, 100) {
             revert("expected revert");
         } catch {}
     }
@@ -107,15 +119,29 @@ contract AgentVaultTest {
     function testTradeBoundsAndAuthorization() public {
         setUp();
         vault.deposit(2000, 0);
-        try vault.executeTrade(99, 1, "") {
+        try vault.executeTrade(99, 1, "", 0, 8_000, "Open decision") {
             revert("expected revert");
         } catch {}
-        try vault.executeTrade(1001, 1, "") {
+        try vault.executeTrade(1001, 1, "", 0, 8_000, "Open decision") {
             revert("expected revert");
         } catch {}
         try unauthorized.executeTrade(address(vault), 100) {
             revert("expected revert");
         } catch {}
+    }
+
+    function testOpenRejectsUnselectedStrategyDecision() public {
+        setUp();
+        AgentVault maker = _newMakerVault();
+        vault.deposit(1000, 0);
+        registry.recordDecision(MarketRegimeRegistry.MarketRegime.Trading, 4, 8_000, 8_000, [uint16(0), 0, 8_000], "Trading regime", "DCA only");
+
+        uint256 expectedOut = app.quoteExactIn(_makerStrategy(address(maker)), true, 100);
+        try vault.executeTrade(100, expectedOut, _tradeData(address(maker)), 1, 8_000, "Momentum should be rejected") {
+            revert("expected revert");
+        } catch {}
+        require(vault.positionState() == PositionState.Flat);
+        require(vault.positionHistoryCount() == 0);
     }
 
     function testOpenAndCloseTradeLifecycle() public {
@@ -124,18 +150,18 @@ contract AgentVaultTest {
         vault.deposit(2000, 0);
 
         uint256 expectedOut = app.quoteExactIn(_makerStrategy(address(maker)), true, 1000);
-        vault.executeTrade(1000, expectedOut, _tradeData(address(maker)));
+        _executeTrade(vault, 1000, expectedOut, _tradeData(address(maker)));
         require(vault.positionState() == PositionState.Long);
         require(vault.positionAmountIn() == 1000);
         require(vault.positionAmountOut() == expectedOut);
         require(btc.balanceOf(address(vault)) == expectedOut);
 
-        try vault.executeTrade(100, 1, "") {
+        try vault.executeTrade(100, 1, "", 0, 8_000, "Open decision") {
             revert("expected revert");
         } catch {}
 
         uint256 expectedBackOut = app.quoteExactIn(_makerStrategy(address(maker)), false, expectedOut);
-        vault.closeTrade(expectedBackOut, _tradeData(address(maker)));
+        _closeTrade(vault, expectedBackOut, _tradeData(address(maker)));
         require(vault.positionState() == PositionState.Flat);
         require(vault.positionAmountIn() == 0);
         require(vault.positionAmountOut() == 0);
@@ -143,6 +169,15 @@ contract AgentVaultTest {
         require(vault.pnl() == int256(expectedBackOut) - 1000);
         require(vault.totalClosedPositionAmountIn() == 1000);
         require(usdt.balanceOf(address(vault)) == 1000 + expectedBackOut);
+        require(vault.positionHistoryCount() == 1);
+        AgentVault.PositionRecord memory record = vault.positionRecordAt(0);
+        require(record.openDecisionId == 0);
+        require(record.closeDecisionId == 0);
+        require(record.openConfidenceBps == 8_000);
+        require(record.closeConfidenceBps == 7_500);
+        require(record.realizedPnl == int256(expectedBackOut) - 1000);
+        require(keccak256(bytes(record.openReason)) == keccak256(bytes("Open decision")));
+        require(keccak256(bytes(record.closeReason)) == keccak256(bytes("Close decision")));
     }
 
     function testPnlAccumulatesAcrossClosedTrades() public {
@@ -151,16 +186,16 @@ contract AgentVaultTest {
         vault.deposit(2000, 0);
 
         uint256 firstPositionOut = app.quoteExactIn(_makerStrategy(address(maker)), true, 500);
-        vault.executeTrade(500, firstPositionOut, _tradeData(address(maker)));
+        _executeTrade(vault, 500, firstPositionOut, _tradeData(address(maker)));
         uint256 firstCloseOut = app.quoteExactIn(_makerStrategy(address(maker)), false, firstPositionOut);
-        vault.closeTrade(firstCloseOut, _tradeData(address(maker)));
+        _closeTrade(vault, firstCloseOut, _tradeData(address(maker)));
         int256 firstTradePnl = int256(firstCloseOut) - 500;
         require(vault.pnl() == firstTradePnl);
 
         uint256 secondPositionOut = app.quoteExactIn(_makerStrategy(address(maker)), true, 500);
-        vault.executeTrade(500, secondPositionOut, _tradeData(address(maker)));
+        _executeTrade(vault, 500, secondPositionOut, _tradeData(address(maker)));
         uint256 secondCloseOut = app.quoteExactIn(_makerStrategy(address(maker)), false, secondPositionOut);
-        vault.closeTrade(secondCloseOut, _tradeData(address(maker)));
+        _closeTrade(vault, secondCloseOut, _tradeData(address(maker)));
         int256 secondTradePnl = int256(secondCloseOut) - 500;
         require(vault.pnl() == firstTradePnl + secondTradePnl);
         require(vault.totalClosedPositionAmountIn() == 1000);
@@ -171,7 +206,7 @@ contract AgentVaultTest {
         AgentVault maker = _newMakerVault();
         vault.deposit(1000, 0);
         uint256 expectedOut = app.quoteExactIn(_makerStrategy(address(maker)), true, 1000);
-        vault.executeTrade(1000, expectedOut, _tradeData(address(maker)));
+        _executeTrade(vault, 1000, expectedOut, _tradeData(address(maker)));
         try vault.withdraw(address(btc), 1, address(this)) {
             revert("expected revert");
         } catch {}
@@ -182,16 +217,21 @@ contract AgentVaultTest {
         vault.deposit(1000, 0);
         btc.mint(address(vault), 500);
         vault.switchMarketMaker(true);
+        bytes32 firstStrategyHash = vault.activeStrategyHash();
         require(vault.vaultMode() == VaultMode.MarketMaker);
         vault.switchMarketMaker(false);
         require(vault.vaultMode() == VaultMode.Trading);
         require(usdt.balanceOf(address(vault)) == 1000);
         require(btc.balanceOf(address(vault)) == 500);
+        vault.switchMarketMaker(true);
+        require(vault.vaultMode() == VaultMode.MarketMaker);
+        require(vault.activeStrategyHash() != firstStrategyHash);
+        require(vault.activeStrategySalt() == bytes32(uint256(1)));
     }
 
     function testFactoryCreatesAndTracksVaults() public {
         setUp();
-        AgentFactory secondFactory = new AgentFactory(address(usdt), address(btc), address(adapter), address(4), address(this));
+        AgentFactory secondFactory = new AgentFactory(address(usdt), address(btc), address(adapter), address(4), address(registry), address(this));
         address created = secondFactory.createVault(StrategyType.DCA, 50, 500);
         require(secondFactory.userVaultCount(address(this)) == 1);
         require(secondFactory.allVaultsCount() == 1);
@@ -209,7 +249,7 @@ contract AgentVaultTest {
             feeBps: vault.DEFAULT_MARKET_MAKER_FEE_BPS(),
             salt: bytes32(0)
         });
-        try vault.executeTrade(100, 1, abi.encode(badStrategy, bytes(""))) {
+        try vault.executeTrade(100, 1, abi.encode(badStrategy, bytes("")), 0, 8_000, "Open decision") {
             revert("expected revert");
         } catch {}
     }
@@ -238,7 +278,7 @@ contract AgentVaultTest {
 
         // vaultB (the taker) executes a trade naming vaultA as the strategy maker.
         uint256 expectedOut = app.quoteExactIn(_makerStrategy(address(vault)), true, 1000);
-        vaultB.executeTrade(1000, expectedOut, _tradeData(address(vault)));
+        _executeTrade(vaultB, 1000, expectedOut, _tradeData(address(vault)));
 
         // vaultB spends its own USDT and receives BTC; vaultA's shipped position is untouched.
         require(vaultB.positionState() == PositionState.Long);

@@ -28,8 +28,8 @@ contract DeployLocal is Script {
         MockAqua aqua = new MockAqua();
         XYCSwap app = new XYCSwap(IAqua(address(aqua)));
         AquaTradingAdapter adapter = new AquaTradingAdapter(address(app), address(aqua));
-        AgentFactory factory = new AgentFactory(address(assetA), address(assetB), address(adapter), address(aqua), tx.origin);
         MarketRegimeRegistry regimeRegistry = new MarketRegimeRegistry(tx.origin);
+        AgentFactory factory = new AgentFactory(address(assetA), address(assetB), address(adapter), address(aqua), address(regimeRegistry), tx.origin);
         vm.stopBroadcast();
 
         deployment = Deployment({

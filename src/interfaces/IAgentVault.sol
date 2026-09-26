@@ -11,7 +11,7 @@ interface IAgentVault {
     function positionState() external view returns (PositionState);
     function pnl() external view returns (int256);
     function totalClosedPositionAmountIn() external view returns (uint256);
-    function executeTrade(uint256 amountIn, uint256 minAmountOut, bytes calldata tradeData) external;
-    function closeTrade(uint256 minAmountOut, bytes calldata tradeData) external;
+    function executeTrade(uint256 amountIn, uint256 minAmountOut, bytes calldata tradeData, uint256 decisionId, uint16 confidenceBps, string calldata reason) external;
+    function closeTrade(uint256 minAmountOut, bytes calldata tradeData, uint256 decisionId, uint16 confidenceBps, string calldata reason) external;
     function switchMarketMaker(bool active) external;
 }

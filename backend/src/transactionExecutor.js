@@ -16,9 +16,9 @@ export class TransactionExecutor {
     const vault = this.client.vaultWithAgent(address);
     let transaction;
     if (action.type === "OPEN_LONG") {
-      transaction = await vault.executeTrade(action.amountIn, action.minAmountOut ?? 0, action.tradeData);
+      transaction = await vault.executeTrade(action.amountIn, action.minAmountOut ?? 0, action.tradeData, action.decisionId, toConfidenceBps(action.confidence), boundedReason(action.reason));
     } else if (action.type === "CLOSE") {
-      transaction = await vault.closeTrade(action.minAmountOut ?? 0, action.tradeData);
+      transaction = await vault.closeTrade(action.minAmountOut ?? 0, action.tradeData, action.decisionId, toConfidenceBps(action.confidence), boundedReason(action.reason));
     } else if (action.type === "SHIP") {
       transaction = await vault.switchMarketMaker(true);
     } else if (action.type === "DOCK") {
@@ -31,17 +31,46 @@ export class TransactionExecutor {
     return { submitted: true, hash: transaction.hash, receipt: await transaction.wait() };
   }
 
-  async recordMarketRegime(mode, decision = {}) {
+  async recordMarketDecision(mode, regimeDecision = {}, strategyDecision = {}) {
     if (!this.enabled) return { submitted: false, reason: "Execution is disabled" };
     if (!this.client.regimeRegistry) return { submitted: false, reason: "REGIME_REGISTRY_ADDRESS is not configured" };
 
     const regime = { MARKET_MAKER: 0, TRADING: 1 }[mode];
     if (regime === undefined) throw new Error(`Unsupported market regime: ${mode}`);
 
-    const confidence = Number(decision.confidence ?? 0);
-    const confidenceBps = Math.round(Math.max(0, Math.min(1, confidence)) * 10_000);
-    const reason = String(decision.reason || "").slice(0, 512);
-    const transaction = await this.client.regimeRegistryWithAgent().recordRegime(regime, confidenceBps, reason);
-    return { submitted: true, hash: transaction.hash, receipt: await transaction.wait() };
+    let selectedStrategyMask = 0;
+    const strategyConfidenceById = [0, 0, 0];
+    for (const name of strategyDecision.strategies || []) {
+      const strategyId = ["MOMENTUM", "TECHNICAL_ANALYSIS", "DCA"].indexOf(name);
+      if (strategyId < 0) throw new Error(`Unsupported strategy: ${name}`);
+      selectedStrategyMask |= 1 << strategyId;
+      const detail = strategyDecision.strategyDetails?.find((candidate) => candidate.name === name);
+      strategyConfidenceById[strategyId] = toConfidenceBps(detail?.confidence ?? strategyDecision.confidence);
+    }
+    const transaction = await this.client.regimeRegistryWithAgent().recordDecision(
+      regime,
+      selectedStrategyMask,
+      toConfidenceBps(regimeDecision.confidence),
+      toConfidenceBps(strategyDecision.confidence),
+      strategyConfidenceById,
+      boundedReason(regimeDecision.reason),
+      boundedReason(strategyDecision.reason)
+    );
+    const receipt = await transaction.wait();
+    return {
+      submitted: true,
+      hash: transaction.hash,
+      receipt,
+      decisionId: this.client.marketDecisionIdFromReceipt(receipt)
+    };
   }
+}
+
+function toConfidenceBps(confidence) {
+  const numeric = Number(confidence ?? 0);
+  return Math.round(Math.max(0, Math.min(1, Number.isFinite(numeric) ? numeric : 0)) * 10_000);
+}
+
+function boundedReason(reason) {
+  return String(reason || "").slice(0, 512);
 }

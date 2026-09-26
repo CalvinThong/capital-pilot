@@ -5,6 +5,7 @@ import {IERC20} from "./interfaces/IERC20.sol";
 import {IAqua} from "./interfaces/IAqua.sol";
 import {ITradingAdapter} from "./interfaces/ITradingAdapter.sol";
 import {IXYCSwapCallback} from "./interfaces/IXYCSwapCallback.sol";
+import {IMarketRegimeRegistry} from "./interfaces/IMarketRegimeRegistry.sol";
 import {XYCSwap} from "./adapters/XYCSwap.sol";
 import {StrategyType, VaultMode, PositionState} from "./types/AgentTypes.sol";
 
@@ -25,15 +26,36 @@ contract AgentVault is IXYCSwapCallback {
     error TransferFailed();
     error Reentrancy();
     error InvalidStrategyData();
+    error InvalidDecision();
+    error InvalidConfidence();
+    error ReasonTooLong();
+    error InvalidRange();
 
     uint256 public constant DEFAULT_MARKET_MAKER_FEE_BPS = 30;
+    uint256 public constant MAX_REASON_LENGTH = 512;
+    uint256 public constant MAX_PAGE_SIZE = 100;
 
+    struct PositionRecord {
+        uint256 openDecisionId;
+        uint256 closeDecisionId;
+        uint64 openedAt;
+        uint64 closedAt;
+        uint16 openConfidenceBps;
+        uint16 closeConfidenceBps;
+        uint256 amountIn;
+        uint256 positionAmountOut;
+        uint256 closeAmountOut;
+        int256 realizedPnl;
+        string openReason;
+        string closeReason;
+    }
 
     address public immutable owner;
     IERC20 public immutable assetA;
     IERC20 public immutable assetB;
     ITradingAdapter public immutable adapter;
     IAqua public immutable aqua;
+    IMarketRegimeRegistry public immutable marketRegimeRegistry;
     StrategyType public immutable strategyType;
     uint256 public immutable minTrade;
     uint256 public immutable maxTrade;
@@ -46,15 +68,20 @@ contract AgentVault is IXYCSwapCallback {
     uint256 public entryPrice;
     int256 public pnl;
     uint256 public totalClosedPositionAmountIn;
+    uint256 public activePositionRecordIndex;
 
     uint256 private _lock = 1;
     bytes32 public activeStrategyHash;
+    bytes32 public activeStrategySalt;
+    uint256 public marketMakerNonce;
+    PositionRecord[] private _positionHistory;
 
     event Deposit(address indexed user, address indexed asset, uint256 amount);
     event Withdraw(address indexed user, address indexed asset, uint256 amount, address receiver);
     event TradeExecuted(uint256 amountIn, uint256 amountOut, uint256 executionPrice);
     event TradeClosed(uint256 amountIn, uint256 amountOut, uint256 executionPrice);
     event PnlUpdated(int256 tradePnl, int256 cumulativePnl);
+    event PositionDecisionRecorded(uint256 indexed positionId, uint256 indexed decisionId, bool indexed isClose, uint16 confidenceBps, string reason);
     event MarketMakerEnabled();
     event MarketMakerDisabled();
     event AuthorizedAgentUpdated(address indexed oldAgent, address indexed newAgent);
@@ -83,11 +110,12 @@ contract AgentVault is IXYCSwapCallback {
         address assetB_,
         address adapter_,
         address aqua_,
+        address marketRegimeRegistry_,
         StrategyType strategyType_,
         uint256 minTrade_,
         uint256 maxTrade_
     ) {
-        if (owner_ == address(0) || authorizedAgent_ == address(0) || assetA_ == address(0) || assetB_ == address(0) || adapter_ == address(0) || aqua_ == address(0)) revert ZeroAddress();
+        if (owner_ == address(0) || authorizedAgent_ == address(0) || assetA_ == address(0) || assetB_ == address(0) || adapter_ == address(0) || aqua_ == address(0) || marketRegimeRegistry_ == address(0)) revert ZeroAddress();
         if (assetA_ == assetB_) revert InvalidAsset();
 
         // aqua_ (the parameter) must be used here: the `aqua` immutable is not assigned until after this block.
@@ -101,6 +129,7 @@ contract AgentVault is IXYCSwapCallback {
         assetB = IERC20(assetB_);
         adapter = ITradingAdapter(adapter_);
         aqua = IAqua(aqua_);
+        marketRegimeRegistry = IMarketRegimeRegistry(marketRegimeRegistry_);
         strategyType = strategyType_;
         minTrade = minTrade_;
         maxTrade = maxTrade_;
@@ -139,24 +168,56 @@ contract AgentVault is IXYCSwapCallback {
         emit AuthorizedAgentUpdated(oldAgent, newAgent);
     }
 
-    function executeTrade(uint256 amountIn, uint256 minAmountOut, bytes calldata tradeData) external onlyAgent nonReentrant {
+    function executeTrade(
+        uint256 amountIn,
+        uint256 minAmountOut,
+        bytes calldata tradeData,
+        uint256 decisionId,
+        uint16 confidenceBps,
+        string calldata reason
+    ) external onlyAgent nonReentrant {
         if (vaultMode != VaultMode.Trading) revert InvalidMode();
         if (positionState != PositionState.Flat) revert PositionAlreadyOpen();
         if (amountIn < minTrade) revert BelowMinTrade();
         if (amountIn > maxTrade) revert AboveMaxTrade();
         if (assetA.balanceOf(address(this)) < amountIn) revert InsufficientBalance();
+        _validateDecision(decisionId, confidenceBps, reason, true);
 
         (uint256 amountOut, uint256 executionPrice) = _swap(address(assetA), address(assetB), amountIn, minAmountOut, tradeData);
         if (amountOut == 0) revert InvalidAmount();
+        uint256 positionId = _positionHistory.length;
+        _positionHistory.push(PositionRecord({
+            openDecisionId: decisionId,
+            closeDecisionId: 0,
+            openedAt: uint64(block.timestamp),
+            closedAt: 0,
+            openConfidenceBps: confidenceBps,
+            closeConfidenceBps: 0,
+            amountIn: amountIn,
+            positionAmountOut: amountOut,
+            closeAmountOut: 0,
+            realizedPnl: 0,
+            openReason: reason,
+            closeReason: ""
+        }));
+        activePositionRecordIndex = positionId;
         positionState = PositionState.Long;
         positionAmountIn = amountIn;
         positionAmountOut = amountOut;
         entryPrice = executionPrice;
         emit TradeExecuted(amountIn, amountOut, executionPrice);
+        emit PositionDecisionRecorded(positionId, decisionId, false, confidenceBps, reason);
     }
 
-    function closeTrade(uint256 minAmountOut, bytes calldata tradeData) external onlyAgent nonReentrant {
+    function closeTrade(
+        uint256 minAmountOut,
+        bytes calldata tradeData,
+        uint256 decisionId,
+        uint16 confidenceBps,
+        string calldata reason
+    ) external onlyAgent nonReentrant {
         if (positionState != PositionState.Long) revert NoPosition();
+        _validateDecision(decisionId, confidenceBps, reason, false);
         (uint256 amountOut, uint256 executionPrice) = _swap(address(assetB), address(assetA), positionAmountOut, minAmountOut, tradeData);
         if (amountOut == 0) revert InvalidAmount();
         uint256 amountIn = positionAmountIn;
@@ -165,12 +226,45 @@ contract AgentVault is IXYCSwapCallback {
             : -int256(amountIn - amountOut);
         pnl += tradePnl;
         totalClosedPositionAmountIn += amountIn;
+        PositionRecord storage positionRecord = _positionHistory[activePositionRecordIndex];
+        positionRecord.closeDecisionId = decisionId;
+        positionRecord.closedAt = uint64(block.timestamp);
+        positionRecord.closeConfidenceBps = confidenceBps;
+        positionRecord.closeAmountOut = amountOut;
+        positionRecord.realizedPnl = tradePnl;
+        positionRecord.closeReason = reason;
         positionState = PositionState.Flat;
         positionAmountIn = 0;
         positionAmountOut = 0;
         entryPrice = 0;
         emit TradeClosed(amountIn, amountOut, executionPrice);
         emit PnlUpdated(tradePnl, pnl);
+        emit PositionDecisionRecorded(activePositionRecordIndex, decisionId, true, confidenceBps, reason);
+    }
+
+    function positionHistoryCount() external view returns (uint256) {
+        return _positionHistory.length;
+    }
+
+    function positionRecordAt(uint256 index) external view returns (PositionRecord memory) {
+        return _positionHistory[index];
+    }
+
+    function getPositionRecords(uint256 offset, uint256 limit) external view returns (PositionRecord[] memory records) {
+        if (limit == 0 || limit > MAX_PAGE_SIZE || offset > _positionHistory.length) revert InvalidRange();
+        uint256 end = offset + limit;
+        if (end > _positionHistory.length) end = _positionHistory.length;
+        records = new PositionRecord[](end - offset);
+        for (uint256 index = offset; index < end; ++index) {
+            records[index - offset] = _positionHistory[index];
+        }
+    }
+
+    function _validateDecision(uint256 decisionId, uint16 confidenceBps, string calldata reason, bool requireSelectedStrategy) internal view {
+        if (confidenceBps > 10_000) revert InvalidConfidence();
+        if (bytes(reason).length > MAX_REASON_LENGTH) revert ReasonTooLong();
+        if (!marketRegimeRegistry.decisionExists(decisionId)) revert InvalidDecision();
+        if (requireSelectedStrategy && !marketRegimeRegistry.isStrategySelected(decisionId, uint8(strategyType))) revert InvalidDecision();
     }
 
     /// Decodes an XYCSwap.Strategy + taker payload from tradeData and executes the swap directly
@@ -250,12 +344,14 @@ contract AgentVault is IXYCSwapCallback {
             amounts[0] = balanceA;
             amounts[1] = balanceB;
 
+            bytes32 strategySalt = bytes32(marketMakerNonce);
+            marketMakerNonce++;
             XYCSwap.Strategy memory strategy = XYCSwap.Strategy({
                 maker: address(this),
                 token0: address(assetA),
                 token1: address(assetB),
                 feeBps: DEFAULT_MARKET_MAKER_FEE_BPS,
-                salt: bytes32(0)
+                salt: strategySalt
             });
 
             bytes32 strategyHash = aqua.ship(
@@ -266,6 +362,7 @@ contract AgentVault is IXYCSwapCallback {
             );
 
             activeStrategyHash = strategyHash;
+            activeStrategySalt = strategySalt;
             vaultMode = VaultMode.MarketMaker;
 
             emit MarketMakerEnabled();
@@ -287,6 +384,7 @@ contract AgentVault is IXYCSwapCallback {
             );
 
             activeStrategyHash = bytes32(0);
+            activeStrategySalt = bytes32(0);
             vaultMode = VaultMode.Trading;
 
             emit MarketMakerDisabled();
