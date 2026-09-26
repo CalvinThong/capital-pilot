@@ -141,6 +141,7 @@ contract AgentVaultTest {
         require(vault.positionAmountOut() == 0);
         require(vault.entryPrice() == 0);
         require(vault.pnl() == int256(expectedBackOut) - 1000);
+        require(vault.totalClosedPositionAmountIn() == 1000);
         require(usdt.balanceOf(address(vault)) == 1000 + expectedBackOut);
     }
 
@@ -162,6 +163,7 @@ contract AgentVaultTest {
         vault.closeTrade(secondCloseOut, _tradeData(address(maker)));
         int256 secondTradePnl = int256(secondCloseOut) - 500;
         require(vault.pnl() == firstTradePnl + secondTradePnl);
+        require(vault.totalClosedPositionAmountIn() == 1000);
     }
 
     function testActivePositionReservesAssetB() public {

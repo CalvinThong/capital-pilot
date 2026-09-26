@@ -258,12 +258,15 @@ export class OpenAIAgents {
     OUTPUT REQUIREMENTS
     ==================================================
 
+    Each item in the strategies array MUST represent exactly one strategy.
+    Never combine multiple strategy names in one name field.
+
     Return ONLY valid JSON matching this structure:
 
     {
       "strategies": [
         {
-          "name": "Momentum | TechnicalAnalysis | DCA",
+          "name": "Momentum",
           "confidence": 0.0,
           "supportingEvidence": [
             "ADX=...",
@@ -300,7 +303,7 @@ export class OpenAIAgents {
       {
         strategies: [
           {
-            name: "Momentum | TechnicalAnalysis | DCA",
+            name: "one of: Momentum, TechnicalAnalysis, DCA",
             confidence: "number 0..1",
             supportingEvidence: ["string"],
             riskFlags: ["string"]
@@ -375,18 +378,20 @@ function normalizeEnum(value) {
 
 function normalizeStrategySelections(value) {
   const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
-  const selections = values.map((selection) => {
+  const selections = values.flatMap((selection) => {
     const detail = typeof selection === "object" && selection !== null ? selection : { name: selection };
-    const name = normalizeStrategyName(detail.name);
-    if (!STRATEGY_NAMES.includes(name)) {
+    const names = typeof detail.name === "string"
+      ? detail.name.split(/[|,]/).map(normalizeStrategyName)
+      : [];
+    if (!names.length || names.some((name) => !STRATEGY_NAMES.includes(name))) {
       throw new Error(`Invalid strategy from OpenAI: ${JSON.stringify(selection)}`);
     }
-    return {
+    return names.map((name) => ({
       name,
       confidence: normalizeConfidence(detail.confidence ?? 1, `${name}.confidence`),
       supportingEvidence: normalizeStringArray(detail.supportingEvidence),
       riskFlags: normalizeStringArray(detail.riskFlags)
-    };
+    }));
   });
 
   return selections

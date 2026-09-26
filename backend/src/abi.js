@@ -32,6 +32,7 @@ export const VAULT_ABI = [
   "function positionAmountOut() view returns (uint256)",
   "function entryPrice() view returns (uint256)",
   "function pnl() view returns (int256)",
+  "function totalClosedPositionAmountIn() view returns (uint256)",
   "function activeStrategyHash() view returns (bytes32)",
   "function executeTrade(uint256 amountIn,uint256 minAmountOut,bytes tradeData)",
   "function closeTrade(uint256 minAmountOut,bytes tradeData)",

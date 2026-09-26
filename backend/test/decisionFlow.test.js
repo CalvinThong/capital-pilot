@@ -36,6 +36,26 @@ test("LLM_B normalizes and deduplicates selected strategies", async () => {
   assert.equal(decision.marketCharacter, "TRENDING");
 });
 
+test("LLM_B splits combined strategy names returned in one object", async () => {
+  const agents = new OpenAIAgents({ enabled: true, apiKey: "test" });
+  agents.completeJson = async () => ({
+    strategies: [{
+      name: "Momentum | TechnicalAnalysis",
+      confidence: 0.75,
+      supportingEvidence: ["ADX=20.07"],
+      riskFlags: []
+    }],
+    overallConfidence: 0.75,
+    marketCharacter: "TRENDING",
+    reason: "Both strategies are supported"
+  });
+
+  const decision = await agents.selectStrategies({});
+  assert.deepEqual(decision.strategies, ["MOMENTUM", "TECHNICAL_ANALYSIS"]);
+  assert.equal(decision.strategyDetails[0].confidence, 0.75);
+  assert.deepEqual(decision.strategyDetails[1].supportingEvidence, ["ADX=20.07"]);
+});
+
 test("forced TRADING defaults an empty LLM_B selection to MOMENTUM", () => {
   const decision = applyForcedTradingStrategyFallback(
     { strategies: [], confidence: 0, reason: "No strategy meets the entry criteria." },

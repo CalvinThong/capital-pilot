@@ -1,4 +1,4 @@
-import { AbiCoder, Contract, JsonRpcProvider, Wallet } from "ethers";
+import { AbiCoder, Contract, JsonRpcProvider, NonceManager, Wallet } from "ethers";
 import { ERC20_ABI, FACTORY_ABI, MARKET_REGIME_REGISTRY_ABI, VAULT_ABI } from "./abi.js";
 
 // Mirrors AgentVault.DEFAULT_MARKET_MAKER_FEE_BPS; salt is always bytes32(0).
@@ -12,7 +12,9 @@ export class TradingClient {
     this.regimeRegistry = regimeRegistryAddress
       ? new Contract(regimeRegistryAddress, MARKET_REGIME_REGISTRY_ABI, this.provider)
       : null;
-    this.agent = agentPrivateKey ? new Wallet(agentPrivateKey, this.provider) : null;
+    this.agent = agentPrivateKey
+      ? new NonceManager(new Wallet(agentPrivateKey, this.provider))
+      : null;
   }
 
   async readMarketRegimeHistory(offset = 0, limit = 100) {
@@ -34,8 +36,8 @@ export class TradingClient {
 
   async readVault(address) {
     const vault = new Contract(address, VAULT_ABI, this.provider);
-    const [owner, authorizedAgent, assetA, assetB, strategy, mode, position, minTrade, maxTrade, amountIn, amountOut, entryPrice, pnl, activeStrategyHash] = await Promise.all([
-      vault.owner(), vault.authorizedAgent(), vault.assetA(), vault.assetB(), vault.strategyType(), vault.vaultMode(), vault.positionState(), vault.minTrade(), vault.maxTrade(), vault.positionAmountIn(), vault.positionAmountOut(), vault.entryPrice(), vault.pnl(), vault.activeStrategyHash()
+    const [owner, authorizedAgent, assetA, assetB, strategy, mode, position, minTrade, maxTrade, amountIn, amountOut, entryPrice, pnl, totalClosedPositionAmountIn, activeStrategyHash] = await Promise.all([
+      vault.owner(), vault.authorizedAgent(), vault.assetA(), vault.assetB(), vault.strategyType(), vault.vaultMode(), vault.positionState(), vault.minTrade(), vault.maxTrade(), vault.positionAmountIn(), vault.positionAmountOut(), vault.entryPrice(), vault.pnl(), vault.totalClosedPositionAmountIn(), vault.activeStrategyHash()
     ]);
     const [balanceA, balanceB] = await Promise.all([
       new Contract(assetA, ERC20_ABI, this.provider).balanceOf(address),
@@ -56,6 +58,7 @@ export class TradingClient {
       positionAmountOut: amountOut,
       entryPrice,
       pnl,
+      totalClosedPositionAmountIn,
       activeStrategyHash,
       balanceA,
       balanceB

@@ -45,6 +45,7 @@ contract AgentVault is IXYCSwapCallback {
     uint256 public positionAmountOut;
     uint256 public entryPrice;
     int256 public pnl;
+    uint256 public totalClosedPositionAmountIn;
 
     uint256 private _lock = 1;
     bytes32 public activeStrategyHash;
@@ -163,6 +164,7 @@ contract AgentVault is IXYCSwapCallback {
             ? int256(amountOut - amountIn)
             : -int256(amountIn - amountOut);
         pnl += tradePnl;
+        totalClosedPositionAmountIn += amountIn;
         positionState = PositionState.Flat;
         positionAmountIn = 0;
         positionAmountOut = 0;
