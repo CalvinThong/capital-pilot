@@ -9,6 +9,7 @@ interface IAgentVault {
     function strategyType() external view returns (StrategyType);
     function vaultMode() external view returns (VaultMode);
     function positionState() external view returns (PositionState);
+    function pnl() external view returns (int256);
     function executeTrade(uint256 amountIn, uint256 minAmountOut, bytes calldata tradeData) external;
     function closeTrade(uint256 minAmountOut, bytes calldata tradeData) external;
     function switchMarketMaker(bool active) external;

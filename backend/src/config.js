@@ -24,6 +24,7 @@ const optionalEnumSet = (name, allowed) => {
 export const config = {
   rpcUrl: required("RPC_URL"),
   factoryAddress: required("FACTORY_ADDRESS"),
+  regimeRegistryAddress: process.env.REGIME_REGISTRY_ADDRESS || "",
   agentPrivateKey: process.env.AGENT_PRIVATE_KEY || "",
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 30000),
   executionEnabled: process.env.EXECUTION_ENABLED === "true",

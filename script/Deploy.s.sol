@@ -5,12 +5,14 @@ import {AgentFactory} from "../src/AgentFactory.sol";
 import {AquaTradingAdapter} from "../src/adapters/AquaTradingAdapter.sol";
 import {XYCSwap} from "../src/adapters/XYCSwap.sol";
 import {IAqua} from "../src/interfaces/IAqua.sol";
+import {MarketRegimeRegistry} from "../src/MarketRegimeRegistry.sol";
 
 contract Deploy is Script {
     struct Deployment {
         address app;
         address adapter;
         address factory;
+        address regimeRegistry;
     }
 
     function run() external returns (Deployment memory deployment) {
@@ -26,8 +28,14 @@ contract Deploy is Script {
         XYCSwap app = new XYCSwap(IAqua(aqua));
         AquaTradingAdapter adapter = new AquaTradingAdapter(address(app), aqua);
         AgentFactory factory = new AgentFactory(assetA, assetB, address(adapter), aqua, authorizedAgent);
+        MarketRegimeRegistry regimeRegistry = new MarketRegimeRegistry(authorizedAgent);
         vm.stopBroadcast();
 
-        deployment = Deployment({app: address(app), adapter: address(adapter), factory: address(factory)});
+        deployment = Deployment({
+            app: address(app),
+            adapter: address(adapter),
+            factory: address(factory),
+            regimeRegistry: address(regimeRegistry)
+        });
     }
 }

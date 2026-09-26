@@ -8,6 +8,7 @@ import {XYCSwap} from "../src/adapters/XYCSwap.sol";
 import {IAqua} from "../src/interfaces/IAqua.sol";
 import {MockERC20} from "../test/mocks/MockERC20.sol";
 import {MockAqua} from "../test/mocks/MockAqua.sol";
+import {MarketRegimeRegistry} from "../src/MarketRegimeRegistry.sol";
 
 contract DeployLocal is Script {
     struct Deployment {
@@ -17,6 +18,7 @@ contract DeployLocal is Script {
         address app;
         address adapter;
         address factory;
+        address regimeRegistry;
     }
 
     function run() external returns (Deployment memory deployment) {
@@ -27,6 +29,7 @@ contract DeployLocal is Script {
         XYCSwap app = new XYCSwap(IAqua(address(aqua)));
         AquaTradingAdapter adapter = new AquaTradingAdapter(address(app), address(aqua));
         AgentFactory factory = new AgentFactory(address(assetA), address(assetB), address(adapter), address(aqua), tx.origin);
+        MarketRegimeRegistry regimeRegistry = new MarketRegimeRegistry(tx.origin);
         vm.stopBroadcast();
 
         deployment = Deployment({
@@ -35,7 +38,8 @@ contract DeployLocal is Script {
             aqua: address(aqua),
             app: address(app),
             adapter: address(adapter),
-            factory: address(factory)
+            factory: address(factory),
+            regimeRegistry: address(regimeRegistry)
         });
     }
 }

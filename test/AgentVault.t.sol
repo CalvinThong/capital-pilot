@@ -140,7 +140,28 @@ contract AgentVaultTest {
         require(vault.positionAmountIn() == 0);
         require(vault.positionAmountOut() == 0);
         require(vault.entryPrice() == 0);
+        require(vault.pnl() == int256(expectedBackOut) - 1000);
         require(usdt.balanceOf(address(vault)) == 1000 + expectedBackOut);
+    }
+
+    function testPnlAccumulatesAcrossClosedTrades() public {
+        setUp();
+        AgentVault maker = _newMakerVault();
+        vault.deposit(2000, 0);
+
+        uint256 firstPositionOut = app.quoteExactIn(_makerStrategy(address(maker)), true, 500);
+        vault.executeTrade(500, firstPositionOut, _tradeData(address(maker)));
+        uint256 firstCloseOut = app.quoteExactIn(_makerStrategy(address(maker)), false, firstPositionOut);
+        vault.closeTrade(firstCloseOut, _tradeData(address(maker)));
+        int256 firstTradePnl = int256(firstCloseOut) - 500;
+        require(vault.pnl() == firstTradePnl);
+
+        uint256 secondPositionOut = app.quoteExactIn(_makerStrategy(address(maker)), true, 500);
+        vault.executeTrade(500, secondPositionOut, _tradeData(address(maker)));
+        uint256 secondCloseOut = app.quoteExactIn(_makerStrategy(address(maker)), false, secondPositionOut);
+        vault.closeTrade(secondCloseOut, _tradeData(address(maker)));
+        int256 secondTradePnl = int256(secondCloseOut) - 500;
+        require(vault.pnl() == firstTradePnl + secondTradePnl);
     }
 
     function testActivePositionReservesAssetB() public {

@@ -30,4 +30,18 @@ export class TransactionExecutor {
     }
     return { submitted: true, hash: transaction.hash, receipt: await transaction.wait() };
   }
+
+  async recordMarketRegime(mode, decision = {}) {
+    if (!this.enabled) return { submitted: false, reason: "Execution is disabled" };
+    if (!this.client.regimeRegistry) return { submitted: false, reason: "REGIME_REGISTRY_ADDRESS is not configured" };
+
+    const regime = { MARKET_MAKER: 0, TRADING: 1 }[mode];
+    if (regime === undefined) throw new Error(`Unsupported market regime: ${mode}`);
+
+    const confidence = Number(decision.confidence ?? 0);
+    const confidenceBps = Math.round(Math.max(0, Math.min(1, confidence)) * 10_000);
+    const reason = String(decision.reason || "").slice(0, 512);
+    const transaction = await this.client.regimeRegistryWithAgent().recordRegime(regime, confidenceBps, reason);
+    return { submitted: true, hash: transaction.hash, receipt: await transaction.wait() };
+  }
 }

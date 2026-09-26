@@ -44,6 +44,7 @@ contract AgentVault is IXYCSwapCallback {
     uint256 public positionAmountIn;
     uint256 public positionAmountOut;
     uint256 public entryPrice;
+    int256 public pnl;
 
     uint256 private _lock = 1;
     bytes32 public activeStrategyHash;
@@ -52,6 +53,7 @@ contract AgentVault is IXYCSwapCallback {
     event Withdraw(address indexed user, address indexed asset, uint256 amount, address receiver);
     event TradeExecuted(uint256 amountIn, uint256 amountOut, uint256 executionPrice);
     event TradeClosed(uint256 amountIn, uint256 amountOut, uint256 executionPrice);
+    event PnlUpdated(int256 tradePnl, int256 cumulativePnl);
     event MarketMakerEnabled();
     event MarketMakerDisabled();
     event AuthorizedAgentUpdated(address indexed oldAgent, address indexed newAgent);
@@ -157,11 +159,16 @@ contract AgentVault is IXYCSwapCallback {
         (uint256 amountOut, uint256 executionPrice) = _swap(address(assetB), address(assetA), positionAmountOut, minAmountOut, tradeData);
         if (amountOut == 0) revert InvalidAmount();
         uint256 amountIn = positionAmountIn;
+        int256 tradePnl = amountOut >= amountIn
+            ? int256(amountOut - amountIn)
+            : -int256(amountIn - amountOut);
+        pnl += tradePnl;
         positionState = PositionState.Flat;
         positionAmountIn = 0;
         positionAmountOut = 0;
         entryPrice = 0;
         emit TradeClosed(amountIn, amountOut, executionPrice);
+        emit PnlUpdated(tradePnl, pnl);
     }
 
     /// Decodes an XYCSwap.Strategy + taker payload from tradeData and executes the swap directly

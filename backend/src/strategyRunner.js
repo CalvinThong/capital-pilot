@@ -6,6 +6,18 @@ export function fallbackGlobalMode(market) {
   return classifyMarket(market).mode === MODES.MARKET_MAKER ? MODES.MARKET_MAKER : MODES.TRADING;
 }
 
+export function applyForcedTradingStrategyFallback(strategyDecision, forceGlobalMode) {
+  if (forceGlobalMode !== MODES.TRADING || strategyDecision.strategies.length > 0) {
+    return strategyDecision;
+  }
+
+  return {
+    ...strategyDecision,
+    strategies: ["MOMENTUM"],
+    reason: `FORCE_GLOBAL_MODE=TRADING defaulted to MOMENTUM because LLM_B selected no strategy. ${strategyDecision.reason || ""}`.trim()
+  };
+}
+
 export function proposeMarketMakerAction(vault, marketMode) {
   if (marketMode === MODES.MARKET_MAKER && vault.mode === 0) {
     if (vault.position !== 0) {

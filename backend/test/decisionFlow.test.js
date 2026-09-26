@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { OpenAIAgents } from "../src/llmAgents.js";
-import { proposeMarketMakerAction, proposeSelectedStrategyEntry } from "../src/strategyRunner.js";
+import { applyForcedTradingStrategyFallback, proposeMarketMakerAction, proposeSelectedStrategyEntry } from "../src/strategyRunner.js";
 
 const tradingVault = {
   address: "0x0000000000000000000000000000000000000001",
@@ -34,6 +34,28 @@ test("LLM_B normalizes and deduplicates selected strategies", async () => {
   assert.equal(decision.strategyDetails[0].confidence, 0.82);
   assert.deepEqual(decision.strategyDetails[1].riskFlags, ["ATR elevated"]);
   assert.equal(decision.marketCharacter, "TRENDING");
+});
+
+test("forced TRADING defaults an empty LLM_B selection to MOMENTUM", () => {
+  const decision = applyForcedTradingStrategyFallback(
+    { strategies: [], confidence: 0, reason: "No strategy meets the entry criteria." },
+    "TRADING"
+  );
+
+  assert.deepEqual(decision.strategies, ["MOMENTUM"]);
+  assert.match(decision.reason, /defaulted to MOMENTUM/);
+});
+
+test("forced TRADING preserves strategies returned by LLM_B", () => {
+  const original = { strategies: ["DCA"], confidence: 0.8, reason: "DCA setup" };
+  const decision = applyForcedTradingStrategyFallback(original, "TRADING");
+  assert.equal(decision, original);
+});
+
+test("does not default an empty selection when TRADING is not forced", () => {
+  const original = { strategies: [], confidence: 0, reason: "No setup" };
+  const decision = applyForcedTradingStrategyFallback(original, "");
+  assert.equal(decision, original);
 });
 
 test("LLM_C normalizes a close decision", async () => {

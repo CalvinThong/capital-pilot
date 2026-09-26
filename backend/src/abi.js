@@ -10,6 +10,14 @@ export const ERC20_ABI = [
   "function balanceOf(address account) view returns (uint256)"
 ];
 
+export const MARKET_REGIME_REGISTRY_ABI = [
+  "function recordRegime(uint8 regime,uint16 confidenceBps,string reason)",
+  "function historyCount() view returns (uint256)",
+  "function regimeAt(uint256 index) view returns (tuple(uint8 regime,uint16 confidenceBps,uint64 recordedAt,string reason))",
+  "function latestRegime() view returns (tuple(uint8 regime,uint16 confidenceBps,uint64 recordedAt,string reason))",
+  "function getRegimes(uint256 offset,uint256 limit) view returns (tuple(uint8 regime,uint16 confidenceBps,uint64 recordedAt,string reason)[])"
+];
+
 export const VAULT_ABI = [
   "function owner() view returns (address)",
   "function authorizedAgent() view returns (address)",
@@ -23,6 +31,7 @@ export const VAULT_ABI = [
   "function positionAmountIn() view returns (uint256)",
   "function positionAmountOut() view returns (uint256)",
   "function entryPrice() view returns (uint256)",
+  "function pnl() view returns (int256)",
   "function activeStrategyHash() view returns (bytes32)",
   "function executeTrade(uint256 amountIn,uint256 minAmountOut,bytes tradeData)",
   "function closeTrade(uint256 minAmountOut,bytes tradeData)",

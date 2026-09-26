@@ -2,7 +2,7 @@ import { config } from "./config.js";
 import { TradingClient } from "./client.js";
 import { MarketDataEngine } from "./marketData.js";
 import { GLOBAL_MODES, OpenAIAgents, STRATEGY_NAMES } from "./llmAgents.js";
-import { fallbackGlobalMode, proposeMarketMakerAction, proposeSelectedStrategyEntry, proposeVaultTradingAction } from "./strategyRunner.js";
+import { applyForcedTradingStrategyFallback, fallbackGlobalMode, proposeMarketMakerAction, proposeSelectedStrategyEntry, proposeVaultTradingAction } from "./strategyRunner.js";
 import { TransactionExecutor } from "./transactionExecutor.js";
 
 const client = new TradingClient(config);
@@ -19,6 +19,7 @@ async function scan() {
     : await llmAgents.classifyMarket(market);
   const globalMode = globalDecision.mode || fallbackGlobalMode(market);
   log("llm_a_market_regime", { mode: globalMode, decision: globalDecision });
+  await recordMarketRegime(globalMode, globalDecision);
 
   const addresses = await client.listVaults();
   const vaults = await Promise.all(addresses.map((address) => client.readVault(address)));
@@ -39,9 +40,10 @@ async function runMarketMakerMode(vaults, globalMode) {
 }
 
 async function runTradingMode(vaults, market, globalMode) {
-  const strategyDecision = config.forceStrategies.size
+  const llmStrategyDecision = config.forceStrategies.size
     ? { strategies: [...config.forceStrategies], confidence: 1, reason: "FORCE_STRATEGIES override" }
     : await llmAgents.selectStrategies(market);
+  const strategyDecision = applyForcedTradingStrategyFallback(llmStrategyDecision, config.forceGlobalMode);
   const selectedStrategyIds = new Set(strategyDecision.strategies.map((name) => STRATEGY_NAMES.indexOf(name)));
   log("llm_b_strategy_selection", { selectedStrategies: strategyDecision.strategies, decision: strategyDecision });
 
@@ -118,6 +120,20 @@ async function executeAndLog(event, vault, proposal) {
     execution
   });
   return execution;
+}
+
+async function recordMarketRegime(mode, decision) {
+  try {
+    const execution = await executor.recordMarketRegime(mode, decision);
+    log("market_regime_recorded", { mode, decision, execution });
+  } catch (error) {
+    log("market_regime_record_failed", {
+      mode,
+      decision,
+      execution: { submitted: false, status: "failed" },
+      proposal: { reason: error.message }
+    });
+  }
 }
 
 function log(event, details) {
