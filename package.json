@@ -1,0 +1,16 @@
+{
+  "name": "shared-ai-trading-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node backend/src/index.js",
+    "check": "node --check backend/src/index.js && node --check backend/src/client.js && node --check backend/src/binance.js && node --check backend/src/marketData.js && node --check backend/src/strategyRunner.js && node --check backend/src/llmAgents.js && node --check backend/src/agents/masterAgent.js && node --check backend/src/agents/decisionAgent.js && node --check backend/src/agents/profitTakingAgent.js && node --check backend/src/transactionExecutor.js",
+    "test": "node --test backend/test/*.test.js"
+  },
+  "dependencies": {
+    "axios": "^1.20.0",
+    "dotenv": "^16.4.7",
+    "ethers": "^6.15.0",
+    "openai": "^7.21.0"
+  }
+}
