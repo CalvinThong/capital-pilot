@@ -34,6 +34,12 @@ export const config = {
   openaiModel: process.env.OPENAI_MODEL || "gpt-4o-mini",
   forceGlobalMode: optionalEnum("FORCE_GLOBAL_MODE", Object.values(GLOBAL_MODES)),
   forceStrategies: optionalEnumSet("FORCE_STRATEGIES", STRATEGY_NAMES),
+  forceCloseVaults: new Set(
+    (process.env.FORCE_CLOSE_VAULTS || "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+  ),
   marketMakerOnlyVaults: new Set(
     (process.env.MARKET_MAKER_ONLY_VAULTS || "")
       .split(",")

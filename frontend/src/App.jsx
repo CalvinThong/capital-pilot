@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AccountBalanceWalletRounded, AddRounded, DashboardRounded, InsightsRounded, ShowChartRounded } from '@mui/icons-material'
+import { AccountBalanceWalletRounded, AddRounded, DashboardRounded, InsightsRounded } from '@mui/icons-material'
 import { Alert, AppBar, Box, Button, Chip, Container, Snackbar, Tab, Tabs, Toolbar, Typography } from '@mui/material'
 import { CreateVaultView } from './components/CreateVaultView.jsx'
 import { RegimeView } from './components/RegimeView.jsx'
@@ -96,7 +96,7 @@ function App() {
       <AppBar position="sticky" elevation={0} className="topbar">
         <Toolbar className="topbar-inner">
           <Box className="brand-lockup">
-            <Box className="brand-mark"><ShowChartRounded /></Box>
+            <Box className="brand-mark" role="img" aria-label="Capital Pilot logo" />
             <Box><Typography className="brand-name">Capital Pilot</Typography><Typography className="brand-subtitle">Autonomous vault console</Typography></Box>
           </Box>
           <Box className="network-state"><span className="status-dot" />{CONTRACT_CONFIG.chainName} <span>#{CONTRACT_CONFIG.chainId}</span></Box>

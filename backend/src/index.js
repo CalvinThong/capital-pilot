@@ -113,12 +113,18 @@ async function ensureTradingMode(vault, globalMode) {
 }
 
 async function evaluateClose(vault, market, decisionId) {
-  const decision = await llmAgents.decideClose({ vault, market });
+  const decision = isForceClose(vault.address)
+    ? { action: "CLOSE", minAmountOut: "0", confidence: 1, reason: "FORCE_CLOSE_VAULTS override" }
+    : await llmAgents.decideClose({ vault, market });
   const proposal = decision.action === "FALLBACK"
     ? { type: "HOLD", reason: decision.reason }
     : proposeVaultTradingAction(vault, market, decision, config.tradeData, decisionId);
   log("llm_c_close_decision", { vault: vault.address, decision });
   await executeAndLog("close_action", vault, proposal);
+}
+
+function isForceClose(address) {
+  return config.forceCloseVaults.has("all") || config.forceCloseVaults.has(address.toLowerCase());
 }
 
 async function executeAndLog(event, vault, proposal) {
